@@ -26,7 +26,9 @@ class MyResnet18(nn.Module):
 class FeatExtr(nn.Module):
     def __init__(self):
         super(FeatExtr, self).__init__()
-        self.mode = nn.Sequential(*list(self.resnet.children())[:-1])
+        self.mode = nn.Sequential(*list(self.resnet.children())[:-1],
+                                 nn.Flatten(),
+                                 )
 
     def forward(self, x):
         feat = self.mode(x)
