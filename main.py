@@ -15,6 +15,8 @@ def get_args():
     parser.add_argument('--drop_prob', default=0.7, help='dropout rate')
     parser.add_argument('--batch_size', default=32, help='size of each batch')
     parser.add_argument('--max_epochs', default=5, help='max epochs of running model')
+    parser.add_argument('--src_domain', default='bag', help='source domain')
+    parser.add_argument('--tag_domain', default='fast', help='target domain')
 
     return parser.parse_args()
 
