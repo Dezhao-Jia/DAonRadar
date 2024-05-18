@@ -7,8 +7,9 @@ import numpy as np
 import torch.nn as nn
 
 from Nets.resNet18 import MyResnet18, FeatExtr, Classifier
-from Data.Datasets import LoadData
-from torch.utils.data import DataLoader
+from loss_funcs.contrast_loss import ContrastLoss
+from Attention.baseline import CrossAttention
+from Data.Datasets import get_Loader
 
 import warnings
 
@@ -21,13 +22,12 @@ class Process:
         self.loss_fn = nn.CrossEntropyLoss()
         self.loss_dis = nn.KLDivLoss(reduction="batchmean")
         self.device = "cuda:1" if torch.cuda.is_available() else "cpu"
-        self.datasets = LoadData().get_datasets()
-        self.net = MyResnet18(num_classes=2)
         self.feat_mode = FeatExtr()
         self.cls_mode = Classifier(num_classes=2)
+        self.cls_mode = Classifier(num_classes=2)
+        self.aten_mode = CrossAttention(in_dim=512, k_dim=512, v_dim=512, num_heads=1)
         self.optim = torch.optim.Adam(self.net.parameters(), lr=args.lr)
-        self.train_iter = DataLoader(self.datasets[0], batch_size=args.batch_size, shuffle=True)
-        self.test_iter = DataLoader(self.datasets[-1], batch_size=args.batch_size, shuffle=True)
+        self.loaders = get_Loader("Data", self.args.src_domain, self.args.tag_domain, self.args.batch_size)
 
 
 def torch_seed(self):
@@ -53,51 +53,58 @@ def do_train(self):
     test_corr_max_list = []
 
     for epoch in range(self.args.max_epochs):
-        self.net.train()
-        t_feat = []
-        for dataset in self.train_iter:
-            data, labels = dataset["image"].to(self.device), dataset["label"].to(self.device)
-            feat, out = self.net(data)
-            t_feat.append(feat)
-            loss = self.loss_fn(out, labels)
+        self.feat_mode.train()
+            self.cls_mode.train()
+            s_feat, s_labels = [], []
+            for dataset in self.loaders[0]:
+                data, labels = dataset["image"].to(self.device), dataset["label"].to(self.device)
+                feat = self.feat_mode(data)
+                s_feat.append(feat)
+                s_labels.append(labels)
+
+            s_feat = torch.cat(s_feat, dim=0)
+            s_labels = torch.cat(s_labels, dim=0)
+
+            a_feat = []
+            for dataset in self.loaders[1]:
+                data, _ = dataset["image"].to(self.device), dataset["label"].to(self.device)
+                feat = self.feat_mode(data)
+                a_feat.append(feat)
+
+            a_feat = torch.cat(a_feat, dim=0)
+            print("feat shape :", s_feat.shape, s_labels.shape, a_feat.shape)
+            s_res, a_res = self.aten_mode(s_feat, a_feat)
+            s_out = self.cls_mode(s_res)
+            a_out = self.cls_mode(a_res)
+
+            loss_cls = self.loss_fn(s_out, s_labels)
+            loss01 = self.loss_contrast(s_feat, s_labels, a_feat)
+            loss = loss_cls + loss01
             self.optim.zero_grad()
             loss.backward()
             self.optim.step()
-        t_feat = torch.cat(t_feat, dim=0)
 
-        e_feat = []
-        for dataset in self.test_iter:
-            data, labels = dataset["image"].to(self.device), dataset["label"].to(self.device)
-            feat, out = self.net(data)
-            e_feat.append(feat)
+            src_corr, src_loss = self.evaluate_corr(self.loaders[0])
+            tag_corr, tag_loss = self.evaluate_corr(self.loaders[-1])
 
-        e_feat = torch.cat(e_feat, dim=0)
-        print("feat shape :", t_feat.shape, e_feat.shape)
+            remain_epoch -= 1
+            if tag_corr > corr_max:
+                corr_max = tag_corr
+                best_net = copy.deepcopy(self.net.state_dict())
+                remain_epoch = early_stop_epoch
 
-        kl_dis = self.loss_dis(t_feat.mean(dim=0), e_feat.mean(dim=0))
-        print("KL Distance :", kl_dis)
-        train_corr, train_loss = self.evaluate_corr(self.train_iter)
-        test_corr, test_loss = self.evaluate_corr(self.test_iter)
-        test_corr_max_list.append(test_corr)
+            if remain_epoch <= 0:
+                break
 
-        remain_epoch -= 1
-        if test_corr > corr_max:
-            corr_max = test_corr
-            best_net = copy.deepcopy(self.net.state_dict())
-            remain_epoch = early_stop_epoch
+            if epoch % 1 == 0:
+                mes = 'epoch {:3d}, src_loss {:.5f}, src_corr {:.4f}, tag_loss {:.5f}, tag_corr {:.4f}' \
+                    .format(epoch, src_loss, src_corr, tag_loss, tag_corr)
+                print(mes)
 
-        if remain_epoch <= 0:
-            break
+        max_index = test_corr_max_list.index(max(test_corr_max_list))
+        tag_corr = test_corr_max_list[max_index]
 
-        if epoch % 1 == 0:
-            mes = 'epoch {:3d}, train_loss {:.5f}, train_corr {:.4f}, test_loss {:.5f}, test_corr {:.4f}' \
-                .format(epoch, train_loss, train_corr, test_loss, test_corr)
-            print(mes)
-
-    max_index = test_corr_max_list.index(max(test_corr_max_list))
-    tag_corr = test_corr_max_list[max_index]
-
-    return best_net, tag_corr
+        return best_net, tag_corr
 
 
 def evaluate_corr(self, data_iter, iter_name="Source"):
