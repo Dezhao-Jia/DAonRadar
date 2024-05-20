@@ -6,7 +6,7 @@ import torch.backends.cudnn
 import numpy as np
 import torch.nn as nn
 
-from Nets.resNet18 import MyResnet18, FeatExtr, Classifier
+from Nets.resNet18 import FeatExtr, Classifier
 from loss_funcs.contrast_loss import ContrastLoss
 from Attention.baseline import CrossAttention
 from Data.Datasets import get_Loader
@@ -24,9 +24,9 @@ class Process:
         self.device = "cuda:1" if torch.cuda.is_available() else "cpu"
         self.feat_mode = FeatExtr()
         self.cls_mode = Classifier(num_classes=2)
-        self.cls_mode = Classifier(num_classes=2)
         self.aten_mode = CrossAttention(in_dim=512, k_dim=512, v_dim=512, num_heads=1)
-        self.optim = torch.optim.Adam(self.net.parameters(), lr=args.lr)
+        self.optim_feat = torch.optim.Adam(self.feat_mode.parameters(), lr=args.lr)
+        self.optim_cls = torch.optim.Adam(self.cls_mode.parameters(), lr=args.lr)
         self.loaders = get_Loader("Data", self.args.src_domain, self.args.tag_domain, self.args.batch_size)
 
 
@@ -80,9 +80,11 @@ class Process:
             loss_cls = self.loss_fn(s_out, s_labels)
             loss01 = self.loss_contrast(s_feat, s_labels, a_feat)
             loss = loss_cls + loss01
-            self.optim.zero_grad()
+            self.optim_feat.zero_grad()
+            self.optim_cls.zero_grad()
             loss.backward()
-            self.optim.step()
+            self.optim_feat.step()
+            self.optim_cls.step()
     
             src_corr, src_loss = self.evaluate_corr(self.loaders[0])
             tag_corr, tag_loss = self.evaluate_corr(self.loaders[-1])
