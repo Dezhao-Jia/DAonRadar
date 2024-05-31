@@ -13,9 +13,11 @@ def get_args():
     parser.add_argument('--seed', default=42, help='number of random seed')
     parser.add_argument('--lr', default=0.0005, help='learning rate')
     parser.add_argument('--drop_prob', default=0.7, help='dropout rate')
+    parser.add_argument('--alpha', default=0.001, help='hyperparameter')
+    parser.add_argument('--beta', default=0.005, help='hyperparameter')
     parser.add_argument('--batch_size', default=32, help='size of each batch')
     parser.add_argument('--max_epochs', default=5, help='max epochs of running model')
-    parser.add_argument('--src_domain', default='bag', help='source domain')
+    parser.add_argument('--src_domain', default='normal', help='source domain')
     parser.add_argument('--tag_domain', default='fast', help='target domain')
 
     return parser.parse_args()
