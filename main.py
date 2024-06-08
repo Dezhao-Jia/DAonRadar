@@ -1,5 +1,5 @@
 import argparse
-from process import Process
+from Process.process_baseline import Process
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -17,6 +17,7 @@ def get_args():
     parser.add_argument('--beta', default=0.005, help='hyperparameter')
     parser.add_argument('--batch_size', default=32, help='size of each batch')
     parser.add_argument('--max_epochs', default=5, help='max epochs of running model')
+    parser.add_argument('--num_classes', default=8, help='number of class index')
     parser.add_argument('--src_domain', default='normal', help='source domain')
     parser.add_argument('--tag_domain', default='fast', help='target domain')
 
