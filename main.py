@@ -20,6 +20,7 @@ def get_args():
     parser.add_argument('--num_classes', default=8, help='number of class index')
     parser.add_argument('--src_domain', default='normal', help='source domain')
     parser.add_argument('--tag_domain', default='fast', help='target domain')
+    parser.add_argument('--if_save', default='False', help='if save check point of network')
 
     return parser.parse_args()
 
