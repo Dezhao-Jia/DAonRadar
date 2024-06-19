@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from sklearn.cluster import *
+from sklearn.mixture import *
+from geomstats.geometry.hypersphere import Hypersphere
+
 
 def get_center(class_num, feat, labels):
     centers = torch.zeros(class_num, feat.shape[-1]).to(labels.device)
@@ -16,13 +20,52 @@ def get_center(class_num, feat, labels):
     return centers
 
 
-def get_pseu_labels(feat, centers):
+# 通过计算样本与中心之间的欧氏距离生成伪标签
+def get_pseu_labels_base(feat, centers):
     pseu_labels = torch.zeros(feat.shape[0]).to(centers.device)
     for i, data in enumerate(feat):
         dist = torch.sum((data - centers) ** 2, dim=-1)
         pseu_labels[i] = torch.argmin(dist)
 
     return pseu_labels
+
+
+# 通过计算样本与中心之间的测地线距离生成伪标签
+def get_pseu_labels_hypersphere(feat, centers):
+    dev = centers.device
+    pseu_labels = torch.zeros(feat.shape[0]).to(dev)
+    sphere = Hypersphere(dim=2)
+    for i, data in enumerate(feat):
+        # 使用测地线距离计算不同向量之间的距离
+        dist = sphere.metric.dist(data.cpu().detach().numpy(), centers.cpu().detach().numpy())
+        dist = torch.tensor(dist).to(dev)
+        pseu_labels[i] = torch.argmin(dist)
+
+    return pseu_labels
+
+
+# 使用 K-Means聚类方法对数据进行聚类分析并生成伪标签
+def get_pesu_labels_KMeans(feat, num_classes):
+    kmeans = KMeans(n_clusters=num_classes)
+    kmeans.fit(feat.cpu().detach().numpy())
+
+    return torch.tensor(kmeans.labels_).to(feat.device)
+
+
+def get_pesu_labels_DBSCAN(feat, num_classes):
+    # 使用 DBSCAN聚类方法对数据进行聚类分析并生成伪标签 -- 会导致梯度爆炸，输出损失为 nan
+    dbscan = DBSCAN(eps=0.5, min_samples=5)
+    dbscan.fit(feat.cpu().detach().numpy())
+
+    return torch.tensor(dbscan.labels_).to(feat.device)
+
+
+# 使用高斯混合模型对数据进行聚类分析并生成伪标签（Gaussian Mixture Models, GMM）
+def get_pesu_labels_GMM(feat, num_classes):
+    gmm = GaussianMixture(n_components=num_classes)
+    gmm.fit(feat.cpu().detach().numpy())
+
+    return torch.tensor(gmm.predict(feat.cpu().detach().numpy())).to(feat.device)
 
 
 def inter_contrastive_loss(features, labels, temperature=0.5):
@@ -80,7 +123,7 @@ class ContrastLoss(nn.Module):
 
     def forward(self, src_feat, src_labels, tag_feat):
         src_centers = get_center(class_num=self.num_class, feat=src_feat, labels=src_labels)
-        pesu_labels = get_pseu_labels(feat=tag_feat, centers=src_centers)
+        pesu_labels = get_pesu_labels_KMeans(feat=tag_feat, num_classes=self.num_class)
         loss = contrastive_learning(src_feat, src_labels, tag_feat, pesu_labels, src_centers, self.num_class)
 
         return loss
@@ -92,7 +135,7 @@ if __name__ == "__main__":
     centers = get_center(class_num=4, feat=x, labels=labels)    # (4, 512)
 
     x_ = torch.rand(6, 512)
-    pseu_labels = get_pseu_labels(feat=x_, centers=centers)
+    pseu_labels = get_pseu_labels_base(feat=x_, centers=centers)
     print('pseu_labels:', pseu_labels.shape)
     print(pseu_labels)
 
